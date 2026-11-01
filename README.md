@@ -284,16 +284,35 @@ Therefore, generating a thumbnail from a large solid archive can take considerab
 The implementation uses:
 
 ```text
-7z l -slt
+7z l -slt -p-
 ```
 
 to obtain the archive file list and then extracts only the selected image using:
 
 ```text
-7z e -so
+7z e -so -p-
 ```
 
 The extracted image is loaded directly from the process output rather than being permanently extracted to disk.
+
+### Process timeout
+
+All external process calls (`7z`, `unrar`) use a safe timeout of **15 seconds** (`waitForFinished(15000)`).
+
+This prevents the thumbnailer from hanging indefinitely on:
+- Corrupted or malformed archives
+- Very large archives that take longer than expected
+- **Encrypted archives** that would otherwise block waiting for a password prompt on `stdin`
+
+If a process does not finish within the timeout, it is killed and the thumbnail request fails gracefully.
+
+### Password handling
+
+The `-p-` flag is passed to `7z` and `unrar` to explicitly disable password prompting, preventing the process from blocking on `stdin` when encountering encrypted archives.
+
+### 7z executable lookup
+
+The `7z` executable is located dynamically via `QStandardPaths::findExecutable("7z")` rather than being hardcoded to `/usr/bin/7z`.
 
 ## Current limitations
 

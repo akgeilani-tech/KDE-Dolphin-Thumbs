@@ -518,19 +518,25 @@ Es una característica del formato de compresión solid.
 
 ---
 
-# 16. Tiempo de espera de `7z`
+# 16. Tiempo de espera y Robustez frente a Archivos Encriptados
 
-La extracción de imágenes mediante `QProcess` utiliza espera sin límite artificial:
+La extracción de imágenes mediante `QProcess` utiliza un timeout seguro:
 
 ```cpp
-waitForFinished(-1)
+waitForFinished(15000)
 ```
 
-Esto evita que una extracción válida sea cancelada simplemente porque un archivo grande necesita más tiempo de procesamiento.
+Esto evita bloqueos indefinidos (`-1`) si un archivo está corrupto, es de lectura lenta o **está encriptado** (previniendo que el proceso se quede esperando eternamente en un prompt de contraseña mediante `stdin`).
 
-Esto es especialmente relevante para archivos 7z solid.
+Además, los comandos externos de `7z` y `unrar` incluyen el parámetro preventivo:
 
-La contrapartida es que un archivo extremadamente grande o problemático puede tardar bastante tiempo en procesarse.
+```text
+-p-
+```
+
+para denegar de forma explícita el uso de contraseñas de manera automática y evitar así que el hilo del thumbnailer quede bloqueado pidiendo credenciales en segundo plano.
+
+La ruta al ejecutable de 7z se localiza dinámicamente mediante `QStandardPaths::findExecutable(QLatin1String("7z"))` en lugar de requerir una ruta estática en `/usr/bin/7z`.
 
 ---
 
@@ -559,15 +565,9 @@ Esto permite que Dolphin continúe funcionando aunque un archivo concreto no pue
 
 ## 7z
 
-El backend ZIP/7z requiere que el ejecutable `7z` esté disponible.
+El backend ZIP/7z requiere que el ejecutable `7z` esté disponible en el PATH del sistema.
 
-La implementación utiliza:
-
-```text
-/usr/bin/7z
-```
-
-Por tanto, el sistema debe proporcionar el ejecutable en esa ubicación.
+La implementación utiliza `QStandardPaths::findExecutable(QLatin1String("7z"))` para localizar el ejecutable de forma dinámica, en lugar de depender de una ruta estática como `/usr/bin/7z`.
 
 Puede verificarse con:
 
@@ -650,13 +650,13 @@ xdg-mime query filetype archivo.7z
 Antes de investigar KDE, comprobar que `7z` puede extraer la imagen:
 
 ```bash
-7z l -slt archivo.7z
+7z l -slt -p- archivo.7z
 ```
 
 Después:
 
 ```bash
-7z e -so \
+7z e -so -p- \
     archivo.7z \
     "ruta/interna/imagen.jpg" \
     > /tmp/test-image.jpg

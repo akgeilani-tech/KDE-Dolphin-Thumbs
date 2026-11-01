@@ -1,6 +1,6 @@
---- a/thumbnail/comiccreator.cpp
-+++ b/thumbnail/comiccreator.cpp
-@@ -8,247 +8,715 @@
+--- kio-extras-26.04.0/thumbnail/comiccreator.cpp.orig	2026-09-28 23:40:59.317564591 -0400
++++ kio-extras-26.04.0/thumbnail/comiccreator.cpp	2026-11-01 10:24:16.366344915 -0400
+@@ -8,29 +8,25 @@
   * Some code borrowed from Okular's comicbook generators,
   * by Tobias Koenig <tokoe@kde.org>
   *
@@ -35,17 +35,8 @@
  #include <QStandardPaths>
  #include <QTemporaryDir>
  
- K_PLUGIN_CLASS_WITH_JSON(ComicCreator, "comicbookthumbnail.json")
- 
- ComicCreator::ComicCreator(QObject *parent, const QVariantList &args)
--    : KIO::ThumbnailCreator(parent, args)
-+: KIO::ThumbnailCreator(parent, args)
- {
- }
- 
--KIO::ThumbnailResult ComicCreator::create(const KIO::ThumbnailRequest &request)
-+KIO::ThumbnailResult ComicCreator::create(
-+    const KIO::ThumbnailRequest &request)
+@@ -44,27 +40,61 @@
+ KIO::ThumbnailResult ComicCreator::create(const KIO::ThumbnailRequest &request)
  {
      const QString path = request.url().toLocalFile();
 +
@@ -57,19 +48,14 @@
  
 -    // Detect mime type.
 -    QMimeDatabase db;
--    const QMimeType mime = db.mimeTypeForName(request.mimeType());
--
++    const QMimeDatabase db;
+     const QMimeType mime = db.mimeTypeForName(request.mimeType());
+ 
 -    if (mime.inherits("application/x-cbz") || mime.inherits("application/zip")) {
 -        // ZIP archive.
 -        cover = extractArchiveImage(path, ZIP);
 -    } else if (mime.inherits("application/x-cbt") || mime.inherits("application/x-gzip") || mime.inherits("application/x-tar")) {
 -        // TAR archive
--        cover = extractArchiveImage(path, TAR);
--    } else if (mime.inherits("application/x-cb7") || mime.inherits("application/x-7z-compressed")) {
-+    const QMimeDatabase db;
-+    const QMimeType mime =
-+    db.mimeTypeForName(request.mimeType());
-+
 +    /*
 +     * ZIP / CBZ
 +     *
@@ -79,60 +65,50 @@
 +    if (mime.inherits(QStringLiteral("application/x-cbz")) ||
 +        mime.inherits(QStringLiteral("application/zip"))) {
 +
++        cover = extractArchiveImage(path, SEVENZIP);
++    }
++    /*
++     * TAR / CBT / GZIP
++     */
++    else if (mime.inherits(QStringLiteral("application/x-cbt")) ||
++             mime.inherits(QStringLiteral("application/x-gzip")) ||
++             mime.inherits(QStringLiteral("application/x-tar"))) {
++
+         cover = extractArchiveImage(path, TAR);
+-    } else if (mime.inherits("application/x-cb7") || mime.inherits("application/x-7z-compressed")) {
++    }
++    /*
++     * 7z / CB7
++     */
++    else if (mime.inherits(QStringLiteral("application/x-cb7")) ||
++             mime.inherits(QStringLiteral("application/x-7z-compressed"))) {
++
          cover = extractArchiveImage(path, SEVENZIP);
 -    } else if (mime.inherits("application/x-cbr") || mime.inherits("application/x-rar")) {
 -        // RAR archive.
--        cover = extractRARImage(path);
--    }
-+        }
++    }
++    /*
++     * RAR / CBR
++     */
++    else if (mime.inherits(QStringLiteral("application/x-cbr")) ||
++             mime.inherits(QStringLiteral("application/x-rar")) ||
++             mime.inherits(QStringLiteral("application/vnd.rar"))) {
++
+         cover = extractRARImage(path);
+     }
++    /*
++     * Unsupported MIME type.
++     */
++    else {
++        return KIO::ThumbnailResult::fail();
++    }
  
--    if (cover.isNull()) {
+     if (cover.isNull()) {
 -        qCDebug(KIO_THUMBNAIL_COMIC_LOG) << "Error creating the comic book thumbnail for" << path;
--        return KIO::ThumbnailResult::fail();
--    }
-+        /*
-+         * TAR / CBT / GZIP
-+         */
-+        else if (mime.inherits(QStringLiteral("application/x-cbt")) ||
-+            mime.inherits(QStringLiteral("application/x-gzip")) ||
-+            mime.inherits(QStringLiteral("application/x-tar"))) {
-+
-+            cover = extractArchiveImage(path, TAR);
-+            }
-+
-+            /*
-+             * 7z / CB7
-+             */
-+            else if (mime.inherits(QStringLiteral("application/x-cb7")) ||
-+                mime.inherits(QStringLiteral("application/x-7z-compressed"))) {
-+
-+                cover = extractArchiveImage(path, SEVENZIP);
-+                }
-+
-+                /*
-+                 * RAR / CBR
-+                 */
-+                else if (mime.inherits(QStringLiteral("application/x-cbr")) ||
-+                    mime.inherits(QStringLiteral("application/x-rar")) ||
-+                    mime.inherits(QStringLiteral("application/vnd.rar"))) {
-+
-+                    cover = extractRARImage(path);
-+                    }
-+
-+                    /*
-+                     * Unsupported MIME type.
-+                     */
-+                    else {
-+                        return KIO::ThumbnailResult::fail();
-+                    }
-+
-+                    if (cover.isNull()) {
-+                        return KIO::ThumbnailResult::fail();
-+                    }
+         return KIO::ThumbnailResult::fail();
+     }
  
--    return KIO::ThumbnailResult::pass(cover);
-+                    return KIO::ThumbnailResult::pass(cover);
- }
+@@ -73,183 +103,404 @@
  
  void ComicCreator::filterImages(QStringList &entries)
  {
@@ -148,93 +124,76 @@
      for (const QString &entry : qAsConst(entries)) {
 -        // Skip MacOS resource forks
 -        if (entry.startsWith(QLatin1String("__MACOSX"), Qt::CaseInsensitive) || entry.startsWith(QLatin1String(".DS_Store"), Qt::CaseInsensitive)) {
-+
 +        /*
 +         * Ignore macOS metadata and resource forks.
 +         */
-+        if (entry.startsWith(
-+            QLatin1String("__MACOSX"),
-+                             Qt::CaseInsensitive) ||
-+                             entry.startsWith(
-+                                 QLatin1String(".DS_Store"),
-+                                              Qt::CaseInsensitive)) {
-+
++        if (entry.startsWith(QLatin1String("__MACOSX"), Qt::CaseInsensitive) ||
++            entry.startsWith(QLatin1String(".DS_Store"), Qt::CaseInsensitive)) {
              continue;
--        }
+         }
 -        if (entry.endsWith(QLatin1String(".avif"), Qt::CaseInsensitive) || entry.endsWith(QLatin1String(".bmp"), Qt::CaseInsensitive)
 -            || entry.endsWith(QLatin1String(".gif"), Qt::CaseInsensitive) || entry.endsWith(QLatin1String(".heif"), Qt::CaseInsensitive)
 -            || entry.endsWith(QLatin1String(".jpg"), Qt::CaseInsensitive) || entry.endsWith(QLatin1String(".jpeg"), Qt::CaseInsensitive)
 -            || entry.endsWith(QLatin1String(".jxl"), Qt::CaseInsensitive) || entry.endsWith(QLatin1String(".png"), Qt::CaseInsensitive)
 -            || entry.endsWith(QLatin1String(".webp"), Qt::CaseInsensitive)) {
 -            entryMap.insert(entry.toLower(), entry);
--        }
-+                                              }
 +
-+                                              const QString lowerEntry =
-+                                              entry.toLower();
++        const QString lowerEntry = entry.toLower();
 +
-+                                              if (lowerEntry.endsWith(QStringLiteral(".avif")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".bmp")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".gif")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".heif")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".jpg")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".jpeg")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".jxl")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".png")) ||
-+                                                  lowerEntry.endsWith(QStringLiteral(".webp"))) {
++        if (lowerEntry.endsWith(QStringLiteral(".avif")) ||
++            lowerEntry.endsWith(QStringLiteral(".bmp")) ||
++            lowerEntry.endsWith(QStringLiteral(".gif")) ||
++            lowerEntry.endsWith(QStringLiteral(".heif")) ||
++            lowerEntry.endsWith(QStringLiteral(".jpg")) ||
++            lowerEntry.endsWith(QStringLiteral(".jpeg")) ||
++            lowerEntry.endsWith(QStringLiteral(".jxl")) ||
++            lowerEntry.endsWith(QStringLiteral(".png")) ||
++            lowerEntry.endsWith(QStringLiteral(".webp"))) {
 +
-+                                                  entryMap.insert(
-+                                                      lowerEntry,
-+                                                      entry
-+                                                  );
-+                                                  }
++            entryMap.insert(lowerEntry, entry);
+         }
      }
 +
      entries = entryMap.values();
  }
  
--QImage ComicCreator::extractArchiveImage(const QString &path, const ComicCreator::Type type)
-+QImage ComicCreator::extractSevenZipImage(
-+    const QString &path,
-+    const QString &imagePath)
++QImage ComicCreator::extractSevenZipImage(const QString &path, const QString &imagePath)
 +{
 +    QProcess process;
 +
-+    process.setProgram(
-+        QStringLiteral("/usr/bin/7z")
-+    );
++    const QString p7zip = QStandardPaths::findExecutable(QStringLiteral("7z"));
++    if (p7zip.isEmpty()) {
++        return {};
++    }
++
++    process.setProgram(p7zip);
 +
 +    process.setArguments({
 +        QStringLiteral("e"),
-+                         QStringLiteral("-so"),
-+                         path,
-+                         imagePath
++        QStringLiteral("-so"),
++        QStringLiteral("-p-"),
++        path,
++        imagePath
 +    });
 +
-+    process.setProcessChannelMode(
-+        QProcess::SeparateChannels
-+    );
-+
++    process.setProcessChannelMode(QProcess::SeparateChannels);
 +    process.start();
 +
 +    if (!process.waitForStarted(5000)) {
 +        return {};
 +    }
 +
-+    if (!process.waitForFinished(-1)) { //was 15000
++    if (!process.waitForFinished(15000)) {
 +        process.kill();
 +        process.waitForFinished();
 +        return {};
 +    }
 +
-+    if (process.exitStatus() != QProcess::NormalExit ||
-+        process.exitCode() != 0) {
-+
++    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
 +        return {};
-+        }
++    }
 +
-+        const QByteArray imageData =
-+        process.readAllStandardOutput();
++    const QByteArray imageData = process.readAllStandardOutput();
 +
 +    if (imageData.isEmpty()) {
 +        return {};
@@ -249,79 +208,56 @@
 +    return image;
 +}
 +
-+QImage ComicCreator::extractArchiveImage(
-+    const QString &path,
-+    const ComicCreator::Type type)
+ QImage ComicCreator::extractArchiveImage(const QString &path, const ComicCreator::Type type)
  {
 -    /// Extracts the cover image out of the .cbz or .cbt file.
 +    /*
 +     * ZIP and 7z archives are handled through
 +     * the system 7z executable.
-+     *
-+     * This intentionally avoids KZip/K7Zip for these
-+     * formats so that both ZIP and 7z use the same
-+     * extraction backend.
 +     */
 +    if (type == SEVENZIP) {
-+
 +        QProcess listProcess;
 +
-+        listProcess.setProgram(
-+            QStringLiteral("/usr/bin/7z")
-+        );
++        const QString p7zip = QStandardPaths::findExecutable(QStringLiteral("7z"));
++        if (p7zip.isEmpty()) {
++            return {};
++        }
++
++        listProcess.setProgram(p7zip);
 +
 +        listProcess.setArguments({
 +            QStringLiteral("l"),
-+                                 QStringLiteral("-slt"),
-+                                 path
++            QStringLiteral("-slt"),
++            QStringLiteral("-p-"),
++            path
 +        });
 +
-+        listProcess.setProcessChannelMode(
-+            QProcess::SeparateChannels
-+        );
-+
++        listProcess.setProcessChannelMode(QProcess::SeparateChannels);
 +        listProcess.start();
 +
 +        if (!listProcess.waitForStarted(5000)) {
 +            return {};
 +        }
 +
-+        if (!listProcess.waitForFinished(-1)) { //was 15000
++        if (!listProcess.waitForFinished(15000)) {
 +            listProcess.kill();
 +            listProcess.waitForFinished();
 +            return {};
 +        }
 +
-+        if (listProcess.exitStatus() != QProcess::NormalExit ||
-+            listProcess.exitCode() != 0) {
-+
++        if (listProcess.exitStatus() != QProcess::NormalExit || listProcess.exitCode() != 0) {
 +            return {};
-+            }
++        }
 +
-+            const QString output =
-+            QString::fromLocal8Bit(
-+                listProcess.readAllStandardOutput()
-+            );
++        const QString output = QString::fromLocal8Bit(listProcess.readAllStandardOutput());
 +
 +        QStringList entries;
-+
-+        const QStringList lines =
-+        output.split(
-+            QLatin1Char('\n'),
-+                     Qt::SkipEmptyParts
-+        );
++        const QStringList lines = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 +
 +        for (const QString &line : lines) {
-+
-+            if (line.startsWith(
-+                QStringLiteral("Path = "))) {
-+
-+                entries.append(
-+                    line.mid(
-+                        QStringLiteral("Path = ").length()
-+                    )
-+                );
-+                }
++            if (line.startsWith(QStringLiteral("Path = "))) {
++                entries.append(line.mid(QStringLiteral("Path = ").length()));
++            }
 +        }
 +
 +        filterImages(entries);
@@ -330,10 +266,7 @@
 +            return {};
 +        }
 +
-+        return extractSevenZipImage(
-+            path,
-+            entries.first()
-+        );
++        return extractSevenZipImage(path, entries.first());
 +    }
 +
 +    /*
@@ -354,11 +287,8 @@
 -        // Reject all other types for this method.
 -        return QImage();
 +    switch (type) {
-+
 +        case TAR:
-+            cArchive.reset(
-+                new KTar(path)
-+            );
++            cArchive.reset(new KTar(path));
 +            break;
 +
 +        default:
@@ -366,9 +296,6 @@
      }
  
 -    // Can our archive be opened?
-+    /*
-+     * Open archive.
-+     */
      if (!cArchive->open(QIODevice::ReadOnly)) {
 -        return QImage();
 +        return {};
@@ -377,33 +304,18 @@
 -    // Get the archive's directory.
 -    const KArchiveDirectory *cArchiveDir = nullptr;
 -    cArchiveDir = cArchive->directory();
-+    /*
-+     * Get archive directory.
-+     */
-+    const KArchiveDirectory *cArchiveDir =
-+    cArchive->directory();
++    const KArchiveDirectory *cArchiveDir = cArchive->directory();
 +
      if (!cArchiveDir) {
 -        return QImage();
 +        return {};
      }
  
-+    /*
-+     * Enumerate all files.
-+     */
      QStringList entries;
  
 -    // Get and filter the entries from the archive.
--    getArchiveFileList(entries, QString(), cArchiveDir);
-+    getArchiveFileList(
-+        entries,
-+        QString(),
-+                       cArchiveDir
-+    );
+     getArchiveFileList(entries, QString(), cArchiveDir);
 +
-+    /*
-+     * Keep only supported image files.
-+     */
      filterImages(entries);
 +
      if (entries.isEmpty()) {
@@ -412,84 +324,49 @@
      }
  
 -#if KIO_VERSION >= QT_VERSION_CHECK(6, 23, 0)
--    const KIO::filesize_t maxFileSize = KIO::ThumbnailRequest::maximumFileSize();
--#else
--    const KConfigGroup globalConfig(KSharedConfig::openConfig(), QStringLiteral("PreviewSettings"));
--    const KIO::filesize_t maxFileSize = globalConfig.readEntry("MaximumSize", std::numeric_limits<KIO::filesize_t>::max());
--#endif
-+    /*
-+     * Determine maximum allowed image size.
-+     */
 +    #if KIO_VERSION >= QT_VERSION_CHECK(6, 23, 0)
-+
-+    const KIO::filesize_t maxFileSize =
-+    KIO::ThumbnailRequest::maximumFileSize();
-+
+     const KIO::filesize_t maxFileSize = KIO::ThumbnailRequest::maximumFileSize();
+-#else
 +    #else
-+
-+    const KConfigGroup globalConfig(
-+        KSharedConfig::openConfig(),
-+                                    QStringLiteral("PreviewSettings")
-+    );
-+
-+    const KIO::filesize_t maxFileSize =
-+    globalConfig.readEntry(
-+        "MaximumSize",
-+        std::numeric_limits<KIO::filesize_t>::max()
-+    );
+     const KConfigGroup globalConfig(KSharedConfig::openConfig(), QStringLiteral("PreviewSettings"));
+     const KIO::filesize_t maxFileSize = globalConfig.readEntry("MaximumSize", std::numeric_limits<KIO::filesize_t>::max());
+-#endif
++    #endif
  
 -    // Extract the cover file.
-+    #endif
-+
-+    /*
-+     * Try images in deterministic order.
-+     */
      for (const QString &entry : entries) {
 -        const KArchiveFile *coverFile = static_cast<const KArchiveFile *>(cArchiveDir->entry(entry));
 -        if (!coverFile || coverFile->size() < 0) {
++        const KArchiveEntry *archiveEntry = cArchiveDir->entry(entry);
 +
-+        const KArchiveEntry *archiveEntry =
-+        cArchiveDir->entry(entry);
-+
-+        if (!archiveEntry ||
-+            !archiveEntry->isFile()) {
-+
-+            continue;
-+            }
-+
-+            const KArchiveFile *coverFile =
-+            static_cast<const KArchiveFile *>(
-+                archiveEntry
-+            );
-+
-+        const qint64 fileSize =
-+        coverFile->size();
-+
-+        if (fileSize < 0) {
-+            continue;
-+        }
-+
-+        const KIO::filesize_t coverFileSize =
-+        static_cast<KIO::filesize_t>(
-+            fileSize
-+        );
-+
-+        if (coverFileSize > maxFileSize) {
++        if (!archiveEntry || !archiveEntry->isFile()) {
              continue;
          }
  
 -        const KIO::filesize_t coverFileSize_t = static_cast<KIO::filesize_t>(coverFile->size());
 -        if (coverFileSize_t > maxFileSize) {
-+        const QByteArray data =
-+        coverFile->data();
++        const KArchiveFile *coverFile = static_cast<const KArchiveFile *>(archiveEntry);
 +
-+        if (data.isEmpty()) {
++        const qint64 fileSize = coverFile->size();
++
++        if (fileSize < 0) {
              continue;
          }
  
 -        return QImage::fromData(coverFile->data());
-+        const QImage image =
-+        QImage::fromData(data);
++        const KIO::filesize_t coverFileSize = static_cast<KIO::filesize_t>(fileSize);
++
++        if (coverFileSize > maxFileSize) {
++            continue;
++        }
++
++        const QByteArray data = coverFile->data();
++
++        if (data.isEmpty()) {
++            continue;
++        }
++
++        const QImage image = QImage::fromData(data);
 +
 +        if (!image.isNull()) {
 +            return image;
@@ -511,8 +388,7 @@
 +        return;
 +    }
 +
-+    const QStringList dirEntries =
-+    dir->entries();
++    const QStringList dirEntries = dir->entries();
 +
      for (const QString &entry : dirEntries) {
 -        const KArchiveEntry *e = dir->entry(entry);
@@ -520,66 +396,41 @@
 -            getArchiveFileList(entries, prefix + entry + '/', static_cast<const KArchiveDirectory *>(e));
 -        } else if (e->isFile()) {
 -            entries.append(prefix + entry);
-+
-+        const KArchiveEntry *archiveEntry =
-+        dir->entry(entry);
++        const KArchiveEntry *archiveEntry = dir->entry(entry);
 +
 +        if (!archiveEntry) {
 +            continue;
 +        }
 +
-+        const QString fullPath =
-+        prefix + entry;
++        const QString fullPath = prefix + entry;
 +
 +        if (archiveEntry->isDirectory()) {
-+
 +            getArchiveFileList(
 +                entries,
 +                fullPath + QLatin1Char('/'),
-+                               static_cast<const KArchiveDirectory *>(
-+                                   archiveEntry
-+                               )
++                static_cast<const KArchiveDirectory *>(archiveEntry)
 +            );
-+
 +        } else if (archiveEntry->isFile()) {
-+
 +            entries.append(fullPath);
          }
      }
  }
  
--QImage ComicCreator::extractRARImage(const QString &path)
-+QImage ComicCreator::extractRARImage(
-+    const QString &path)
+ QImage ComicCreator::extractRARImage(const QString &path)
  {
 -    /// Extracts the cover image out of the .cbr file.
-+    /*
-+     * Find a supported RAR executable once.
-+     */
-+    static const QString unrar =
-+    unrarPath();
- 
+-
 -    // Check if unrar is available. Get its path in 'unrarPath'.
--    static const QString unrar = unrarPath();
+     static const QString unrar = unrarPath();
++
      if (unrar.isEmpty()) {
 -        return QImage();
 +        return {};
      }
  
 -    // Get the files and filter the images out.
--    QStringList entries = getRARFileList(path, unrar);
-+    /*
-+     * Obtain archive file list.
-+     */
-+    QStringList entries =
-+    getRARFileList(
-+        path,
-+        unrar
-+    );
+     QStringList entries = getRARFileList(path, unrar);
 +
-+    /*
-+     * Keep only image files.
-+     */
      filterImages(entries);
 +
      if (entries.isEmpty()) {
@@ -587,27 +438,22 @@
 +        return {};
 +    }
 +
-+    const QString coverEntry =
-+    entries.first();
++    const QString coverEntry = entries.first();
 +
-+    /*
-+     * Extract only the first image
-+     * to a temporary directory.
-+     */
 +    QTemporaryDir temporaryDirectory;
 +
 +    if (!temporaryDirectory.isValid()) {
 +        return {};
 +    }
 +
-+    const bool processFinished =
-+    runProcess(
++    const bool processFinished = runProcess(
 +        unrar,
 +        {
 +            QStringLiteral("x"),
-+               QStringLiteral("-n") + coverEntry,
-+               path,
-+               temporaryDirectory.path()
++            QStringLiteral("-p-"),
++            QStringLiteral("-n") + coverEntry,
++            path,
++            temporaryDirectory.path()
 +        }
 +    );
 +
@@ -619,13 +465,9 @@
 -    // unrar x -n<file> path/to/archive /path/to/temp
 -    QTemporaryDir cUnrarTempDir;
 -    runProcess(unrar, {"x", "-n" + entries[0], path, cUnrarTempDir.path()});
-+    /*
-+     * Load extracted image.
-+     */
-+    const QString extractedPath =
-+    temporaryDirectory.path()
-+    + QDir::separator()
-+    + coverEntry;
++    const QString extractedPath = temporaryDirectory.path()
++                                + QDir::separator()
++                                + coverEntry;
  
 -    // Load cover file data into image.
      QImage cover;
@@ -638,80 +480,44 @@
      return cover;
  }
  
--QStringList ComicCreator::getRARFileList(const QString &path, const QString &unrarPath)
-+QStringList ComicCreator::getRARFileList(
-+    const QString &path,
-+    const QString &unrarPath)
+ QStringList ComicCreator::getRARFileList(const QString &path, const QString &unrarPath)
  {
 -    /// Get a verbose unrar listing so we can extract a single file later.
 -    // CMD: unrar vb /path/to/archive
-+    /*
-+     * Get a verbose RAR listing.
-+     *
-+     * Command:
-+     *
-+     *     unrar vb archive.rar
-+     */
      QStringList entries;
 -    runProcess(unrarPath, {"vb", path});
 -    entries = QString::fromLocal8Bit(m_stdOut).split('\n', Qt::SkipEmptyParts);
--    return entries;
 +
 +    if (!runProcess(
 +        unrarPath,
 +        {
 +            QStringLiteral("vb"),
-+                    path
++            QStringLiteral("-p-"),
++            path
 +        })) {
 +
 +        return entries;
-+        }
++    }
 +
-+        entries =
-+        QString::fromLocal8Bit(
-+            m_stdOut
-+        ).split(
-+            QLatin1Char('\n'),
-+                Qt::SkipEmptyParts
-+        );
++    entries = QString::fromLocal8Bit(m_stdOut).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 +
-+        return entries;
+     return entries;
  }
  
  QString ComicCreator::unrarPath() const
  {
 -    /// Check the standard paths to see if a suitable unrar is available.
 -    QString unrar = QStandardPaths::findExecutable("unrar");
-+    /*
-+     * Search for a supported RAR executable.
-+     *
-+     * Priority:
-+     *
-+     * 1. unrar
-+     * 2. unrar-nonfree
-+     * 3. rar
-+     */
-+    QString unrar =
-+    QStandardPaths::findExecutable(
-+        QStringLiteral("unrar")
-+    );
++    QString unrar = QStandardPaths::findExecutable(QStringLiteral("unrar"));
 +
      if (unrar.isEmpty()) {
 -        unrar = QStandardPaths::findExecutable("unrar-nonfree");
-+
-+        unrar =
-+        QStandardPaths::findExecutable(
-+            QStringLiteral("unrar-nonfree")
-+        );
++        unrar = QStandardPaths::findExecutable(QStringLiteral("unrar-nonfree"));
      }
 +
      if (unrar.isEmpty()) {
 -        unrar = QStandardPaths::findExecutable("rar");
-+
-+        unrar =
-+        QStandardPaths::findExecutable(
-+            QStringLiteral("rar")
-+        );
++        unrar = QStandardPaths::findExecutable(QStringLiteral("rar"));
      }
 -    if (!unrar.isEmpty()) {
 -        QProcess proc;
@@ -724,150 +530,70 @@
 -            }
 +
 +    if (unrar.isEmpty()) {
-+
-+        qCWarning(
-+            KIO_THUMBNAIL_COMIC_LOG
-+        )
-+        << "A suitable version of unrar is not available.";
-+
++        qCWarning(KIO_THUMBNAIL_COMIC_LOG) << "A suitable version of unrar is not available.";
 +        return {};
 +    }
 +
-+    /*
-+     * Verify that the executable is actually
-+     * a compatible RAR/UNRAR implementation.
-+     */
 +    QProcess process;
 +
-+    process.start(
-+        unrar,
-+        {
-+            QStringLiteral("-version")
-         }
-+    );
++    process.start(unrar, { QStringLiteral("-version") });
 +
-+    if (!process.waitForFinished(-1)) {
-+
-+        qCWarning(
-+            KIO_THUMBNAIL_COMIC_LOG
-+        )
-+        << "Unable to execute RAR program:"
-+        << unrar;
-+
++    if (!process.waitForFinished(15000)) {
++        qCWarning(KIO_THUMBNAIL_COMIC_LOG) << "Unable to execute RAR program:" << unrar;
 +        return {};
++    }
++
++    const QStringList lines = QString::fromLocal8Bit(process.readAllStandardOutput()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
++
++    if (!lines.isEmpty()) {
++        const QString firstLine = lines.first();
++
++        if (firstLine.startsWith(QStringLiteral("RAR ")) ||
++            firstLine.startsWith(QStringLiteral("UNRAR "))) {
++            return unrar;
+         }
      }
 -    qCWarning(KIO_THUMBNAIL_COMIC_LOG) << "A suitable version of unrar is not available.";
 -    return QString();
 +
-+    const QStringList lines =
-+    QString::fromLocal8Bit(
-+        process.readAllStandardOutput()
-+    ).split(
-+        QLatin1Char('\n'),
-+            Qt::SkipEmptyParts
-+    );
-+
-+    if (!lines.isEmpty()) {
-+
-+        const QString firstLine =
-+        lines.first();
-+
-+        if (firstLine.startsWith(
-+            QStringLiteral("RAR ")) ||
-+            firstLine.startsWith(
-+                QStringLiteral("UNRAR "))) {
-+
-+            return unrar;
-+                }
-+    }
-+
-+    qCWarning(
-+        KIO_THUMBNAIL_COMIC_LOG
-+    )
-+    << "The executable is not a suitable "
-+    "RAR/UNRAR implementation:"
-+    << unrar;
++    qCWarning(KIO_THUMBNAIL_COMIC_LOG) << "The executable is not a suitable RAR/UNRAR implementation:" << unrar;
 +
 +    return {};
  }
  
 -int ComicCreator::runProcess(const QString &processPath, const QStringList &args)
-+int ComicCreator::runProcess(
-+    const QString &processPath,
-+    const QStringList &args)
++bool ComicCreator::runProcess(const QString &processPath, const QStringList &args)
  {
 -    /// Run a process and store stdout data in a buffer.
 -
-+    /*
-+     * Execute external RAR program
-+     * and retain stdout.
-+     */
      QProcess process;
--    process.setProcessChannelMode(QProcess::SeparateChannels);
 +
-+    process.setProcessChannelMode(
-+        QProcess::SeparateChannels
-+    );
+     process.setProcessChannelMode(QProcess::SeparateChannels);
  
      process.setProgram(processPath);
      process.setArguments(args);
--    process.start(QIODevice::ReadWrite | QIODevice::Unbuffered);
++
+     process.start(QIODevice::ReadWrite | QIODevice::Unbuffered);
  
 -    auto ret = process.waitForFinished(-1);
--    m_stdOut = process.readAllStandardOutput();
-+    process.start(
-+        QIODevice::ReadWrite |
-+        QIODevice::Unbuffered
-+    );
-+
-+    if (!process.waitForStarted()) {
-+
++    if (!process.waitForStarted(5000)) {
 +        m_stdOut.clear();
-+
 +        return false;
 +    }
 +
-+    const bool finished =
-+    process.waitForFinished(-1);
++    const bool finished = process.waitForFinished(15000);
 +
-+    m_stdOut =
-+    process.readAllStandardOutput();
-+
-+    if (!finished) {
-+        return false;
-+    }
+     m_stdOut = process.readAllStandardOutput();
  
 -    return ret;
-+    return process.exitStatus() ==
-+    QProcess::NormalExit &&
-+    process.exitCode() == 0;
++    if (!finished) {
++        process.kill();
++        process.waitForFinished();
++        return false;
++    }
++
++    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
  }
  
  #include "comiccreator.moc"
---- a/thumbnail/comiccreator.h
-+++ b/thumbnail/comiccreator.h
-@@ -49,6 +49,10 @@
-     QString unrarPath() const;
-     QStringList getRARFileList(const QString &path, const QString &unrarPath);
- 
-+    // For "7z" type files.
-+    // Uses the system 7z executable.
-+    QImage extractSevenZipImage(const QString &path, const QString &imagePath);
-+
- private:
-     QByteArray m_stdOut;
- };
---- a/thumbnail/comicbookthumbnail.json
-+++ b/thumbnail/comicbookthumbnail.json
-@@ -8,7 +8,10 @@
-             "application/vnd.comicbook+zip",
-             "application/vnd.comicbook-rar",
-             "application/vnd.comicbook+tar",
--            "application/x-cb7"
-+            "application/x-cb7",
-+            "application/zip",
-+            "application/vnd.rar",
-+            "application/x-7z-compressed"
-         ],
-         "Name": "Comic Books",
-         "Name[ar]": "الكتب الهزليّة",
+-#include "moc_comiccreator.cpp"
